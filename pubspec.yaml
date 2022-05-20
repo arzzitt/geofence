@@ -37,6 +37,7 @@ dependencies:
   poly_geofence_service: ^1.5.8
   google_maps_flutter: ^2.1.5
   location: ^4.2.0
+  flutter_animarker: ^3.2.0
 
 dev_dependencies:
   flutter_test:

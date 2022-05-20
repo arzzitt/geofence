@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_print
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'dart:collection';
@@ -11,6 +12,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_flutter_platform_interface/src/types/location.dart'
     as Latlong;
 import 'package:poly_geofence_service/models/lat_lng.dart' as latlong;
+import 'package:location/location.dart' as loc;
+import 'package:flutter_animarker/flutter_map_marker_animation.dart';
 
 void main() => runApp(const ExampleApp());
 
@@ -38,7 +41,8 @@ class _ExampleAppState extends State<ExampleApp> {
   int? _lastXCoordinate, _lastYCoordinate;
 
   final _streamController = StreamController<PolyGeofence>();
-  static final List<latlong.LatLng> _geofence = [];
+  final List<latlong.LatLng> _geofence = [];
+  final marker = <MarkerId, Marker>{};
 
   // Create a [PolyGeofenceService] instance and set options.
   final _polyGeofenceService = PolyGeofenceService.instance.setup(
@@ -59,7 +63,7 @@ class _ExampleAppState extends State<ExampleApp> {
 
   // This function is to be called when the location has changed.
   void _onLocationChanged(Location location) {
-    print('location: ${location.toJson()}');
+    print('location1: ${location.toJson()}');
   }
 
   // This function is to be called when a location services status change occurs
@@ -93,6 +97,38 @@ class _ExampleAppState extends State<ExampleApp> {
     });
   }
 
+  loc.Location currentLocation = loc.Location();
+  final Set<Marker> _markers = {};
+
+  void getLocation() async {
+    var location = await currentLocation.getLocation();
+    currentLocation.onLocationChanged.listen((loc.LocationData localdata) {
+      updateMarkerAndCircle(localdata);
+      print(localdata.latitude);
+      print(localdata.longitude);
+    });
+  }
+
+  void updateMarkerAndCircle(loc.LocationData newLocalData) {
+    Latlong.LatLng latlng =
+        Latlong.LatLng(newLocalData.latitude!, newLocalData.longitude!);
+    this.setState(() {
+      var markers = RippleMarker(
+        markerId: MarkerId("home"),
+        position: latlng,
+        rotation: newLocalData.heading!,
+        draggable: false,
+        ripple: true,
+        zIndex: 2,
+        flat: true,
+        anchor: Offset(0.5, 0.5),
+      );
+      setState(() {
+        marker[MarkerId("home")] = markers;
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -115,16 +151,23 @@ class _ExampleAppState extends State<ExampleApp> {
         iosNotificationOptions: const IOSNotificationOptions(),
         notificationTitle: 'Geofence Service is running',
         notificationText: 'Tap to return to the app',
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('Poly Geofence Service'),
-            centerTitle: true,
-          ),
-          body: _buildContentView(),
-          floatingActionButton: FloatingActionButton(
-            onPressed: _toggleDrawing,
-            tooltip: 'Drawing',
-            child: Icon((_drawPolygonEnabled) ? Icons.cancel : Icons.edit),
+        child: SafeArea(
+          child: Scaffold(
+            appBar: AppBar(
+              flexibleSpace: ElevatedButton(
+                child: Icon(Icons.location_city),
+                onPressed: () {
+                  getLocation();
+                },
+              ),
+              centerTitle: true,
+            ),
+            body: _buildContentView(),
+            floatingActionButton: FloatingActionButton(
+              onPressed: _toggleDrawing,
+              tooltip: 'Drawing',
+              child: Icon((_drawPolygonEnabled) ? Icons.cancel : Icons.edit),
+            ),
           ),
         ),
       ),
@@ -255,31 +298,43 @@ class _ExampleAppState extends State<ExampleApp> {
         final updatedDateTime = DateTime.now();
         final content = snapshot.data?.toJson().toString() ?? '';
 
-        return SingleChildScrollView(
-          child: Column(children: [
-            ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(8.0),
-              children: [
-                Text('•\t\tPolyGeofence (updated: $updatedDateTime)'),
-                const SizedBox(height: 10.0),
-                Text(content),
-                GestureDetector(
+        return Container(
+          height: MediaQuery.of(context).size.height,
+          child: Column(
+            children: [
+              Text('•\t\tPolyGeofence (updated: $updatedDateTime)'),
+              const SizedBox(height: 10.0),
+              Text(content),
+              Expanded(
+                child: GestureDetector(
                   onPanUpdate: (_drawPolygonEnabled) ? _onPanUpdate : null,
                   onPanEnd: (_drawPolygonEnabled) ? _onPanEnd : null,
-                  child: GoogleMap(
-                    mapType: MapType.normal,
-                    initialCameraPosition: _kGooglePlex,
-                    polygons: _polygons,
-                    polylines: _polyLines,
-                    onMapCreated: (GoogleMapController controller) {
-                      _controller.complete(controller);
-                    },
+                  child: Animarker(
+                    curve: Curves.linear,
+                    rippleRadius: 0.2,
+
+                    zoom: 17,
+
+                    useRotation: true,
+                    duration: Duration(milliseconds: 1000),
+                    mapId: _controller.future
+                        .then<int>((value) => value.mapId), //Grab Google Map Id
+                    markers: marker.values.toSet(),
+                    child: GoogleMap(
+                      markers: _markers,
+                      mapType: MapType.normal,
+                      initialCameraPosition: _kGooglePlex,
+                      polygons: _polygons,
+                      polylines: _polyLines,
+                      onMapCreated: (GoogleMapController controller) {
+                        _controller.complete(controller);
+                      },
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ]),
+              ),
+            ],
+          ),
         );
       },
     );
